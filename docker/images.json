@@ -1,5 +1,0 @@
-{
-  "base": "odsai/ecup26-quality-baseline:1.0",
-  "custom": "jm1h/ecup26-quality:1.0",
-  "_комментарий": "base — образ организаторов, годится решениям на sklearn и transformers. custom — наш образ (docker/Dockerfile): добавлены easyocr, peft, catboost, lightgbm, xgboost и веса распознавателя. Имя custom должно совпадать с тем, под которым образ выложен на Docker Hub, и репозиторий должен быть публичным: проверяющая система тянет его анонимно."
-}

@@ -65,40 +65,10 @@ def _shingle_bands(text: str, k: int = 8, n_hashes: int = N_HASHES,
     return [(bi, *sig[bi:bi + band]) for bi in range(0, len(sig) - band + 1, band)]
 
 
-def _cosine_pairs(texts: pd.Series, threshold: float, chunk: int = 512):
-    """Пары строк с косинусной близостью не ниже threshold на мешке n-грамм.
-
-    ⚠ Зачем это нужно сверх мини-хэшей. Замер 18.08: 1234 товара (9.5%) имели соседа
-    с близостью >0.90 в ЧУЖОЙ группе, и метка соседа совпадала у 98.5%. Мини-хэши их
-    не ловили — 16 подписей при полосе 4 дают всего четыре полосы, и пара с Жаккаром
-    0.5 находится с вероятностью 23%; тексты короче 12 слов подписи не получают вовсе;
-    шинглуется только описание, название — нет. Утечка стоила редкой категории 16 п.п.
-    AUC (0.9969 против 0.8338), то есть офлайн-оценка держалась на копировании двойника.
-    """
-    from sklearn.feature_extraction.text import TfidfVectorizer
-
-    vec = TfidfVectorizer(max_features=60000, ngram_range=(1, 2), min_df=2)
-    X = vec.fit_transform(texts.tolist())
-    norms = np.sqrt(X.multiply(X).sum(axis=1)) + 1e-9
-    X = X.multiply(1.0 / norms).tocsr()
-    for i in range(0, X.shape[0], chunk):
-        sim = (X[i:i + chunk] @ X.T).toarray()
-        for r, c in zip(*np.where(sim >= threshold)):
-            a = i + int(r)
-            b = int(c)
-            if a < b:
-                yield a, b
-
-
 def build_groups(df: pd.DataFrame, name_col: str = "name", desc_col: str = "description",
                  image_hashes: dict[str, list[str]] | None = None,
-                 id_col: str = "id", shingle_k: int = 8,
-                 cosine_threshold: float | None = None) -> pd.Series:
-    """Возвращает номер группы для каждой строки df (индекс сохраняется).
-
-    cosine_threshold — если задан, дополнительно склеивает пары по косинусной близости
-    названия с описанием. Это закрывает дыры в полноте мини-хэшей (см. `_cosine_pairs`).
-    """
+                 id_col: str = "id", shingle_k: int = 8) -> pd.Series:
+    """Возвращает номер группы для каждой строки df (индекс сохраняется)."""
     n = len(df)
     ds = DisjointSet(n)
     pos = {idx: k for k, idx in enumerate(df.index)}
@@ -150,12 +120,6 @@ def build_groups(df: pd.DataFrame, name_col: str = "name", desc_col: str = "desc
                 continue
             for other in members[1:]:
                 ds.union(members[0], other)
-
-    # 6. близкие по словам карточки, которых не поймали ни точное совпадение, ни полосы
-    if cosine_threshold is not None:
-        joined = (norm_name + " " + norm_desc).reset_index(drop=True)
-        for a, b in _cosine_pairs(joined, float(cosine_threshold)):
-            ds.union(a, b)
 
     roots = np.array([ds.find(k) for k in range(n)])
     _, group_ids = np.unique(roots, return_inverse=True)

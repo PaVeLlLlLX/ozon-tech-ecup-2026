@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "name": "tfidf_logreg",
+    "use_ocr": false,
+    "use_rule_features": true,
+    "word": {
+      "max_features": 200000,
+      "ngram_range": [
+        1,
+        2
+      ],
+      "min_df": 2,
+      "sublinear_tf": true
+    },
+    "char": {
+      "enabled": true,
+      "max_features": 200000,
+      "ngram_range": [
+        3,
+        5
+      ],
+      "min_df": 3,
+      "sublinear_tf": true
+    },
+    "logreg": {
+      "C": 4.0,
+      "max_iter": 2000,
+      "class_weight": "balanced"
+    },
+    "desc_max_chars": 2500
+  },
+  "ocr": {
+    "max_side": 1024,
+    "max_chars_per_image": 400,
+    "max_images": 5,
+    "languages": [
+      "ru",
+      "en"
+    ],
+    "batch_flush": 25
+  }
+}

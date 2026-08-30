@@ -1,0 +1,27 @@
+{
+ "источник": "восстановлено из configs/vlm_sft_rented.yaml и configs/vlm_sft.yaml архива vlm_blend_rare2_a_t24, давшего публичные 0.9168088205",
+ "n_images": 5,
+ "max_pixels": 100352,
+ "desc_max": 900,
+ "prompt": "rare2",
+ "rules": "on",
+ "facts": "off",
+ "base_model": "Qwen/Qwen3-VL-4B-Instruct",
+ "use_ocr": false,
+ "yes_variants": [
+  "Да",
+  " Да",
+  "да",
+  "Yes",
+  " Yes"
+ ],
+ "no_variants": [
+  "Нет",
+  " Нет",
+  "нет",
+  "No",
+  " No"
+ ],
+ "примечание": "написания ответа взяты из YES_VARIANTS/NO_VARIANTS решения vlm_blend_rare2_a_t24 — на них считалась шкала, под которую подобран порог 0.9699",
+ "image_max_side": 640
+}

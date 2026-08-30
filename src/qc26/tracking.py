@@ -68,8 +68,41 @@ def _flatten(d: dict, prefix: str = "") -> dict:
     return out
 
 
+# Что НЕ выкладывать в трекер. Веса обученных LLM/VLM и адаптеры весят гигабайты,
+# качаются по локальной сети медленно и никому в отчёте не нужны: сравнивают числа
+# и таблицы, а не тензоры. Всё, что крупнее ARTIFACT_MAX_MB, тоже отсекается —
+# иначе база трекера за неделю станет неподъёмной.
+ARTIFACT_DENY_SUFFIX = (".safetensors", ".bin", ".gguf", ".pth", ".ckpt", ".onnx")
+ARTIFACT_MAX_MB = 25.0
+
+
+def collect_artifacts(paths, *, max_mb: float = ARTIFACT_MAX_MB) -> tuple[list, list]:
+    """Разделяет пути на «выкладываем» и «отсекаем (причина)». Папки обходит.
+
+    Возвращает (список файлов, список пар (путь, причина)) — второй печатается,
+    чтобы отсечение никогда не было молчаливым.
+    """
+    keep, drop = [], []
+    queue = [resolve_path(p) for p in paths]
+    while queue:
+        p = queue.pop()
+        if p.is_dir():
+            queue.extend(sorted(p.iterdir()))
+            continue
+        if not p.exists():
+            drop.append((p, "нет файла"))
+        elif p.suffix.lower() in ARTIFACT_DENY_SUFFIX:
+            drop.append((p, f"веса модели ({p.suffix})"))
+        elif p.stat().st_size > max_mb * 1e6:
+            drop.append((p, f"{p.stat().st_size / 1e6:.0f} МБ > {max_mb:.0f} МБ"))
+        else:
+            keep.append(p)
+    return keep, drop
+
+
 def log_run(cfg: dict, run_name: str, params: dict, metrics: dict,
-            tags: dict | None = None, note: str | None = None) -> None:
+            tags: dict | None = None, note: str | None = None,
+            artifacts: list | None = None) -> None:
     """note — короткая суть прогона: что именно поменялось и что здесь важно.
 
     Кладётся в штатное поле описания MLflow (`mlflow.note.content`), поэтому видно
@@ -104,5 +137,16 @@ def log_run(cfg: dict, run_name: str, params: dict, metrics: dict,
                                if v is not None})
             mlflow.log_metrics({metric_name(k): float(v) for k, v in _flatten(metrics).items()
                                 if isinstance(v, (int, float)) and v == v})
+            if artifacts:
+                keep, drop = collect_artifacts(artifacts)
+                for p in keep:
+                    # кладём в подпапку по типу: reports/ preds/ configs/ — иначе в
+                    # интерфейсе получается плоская свалка из десятков файлов
+                    sub = p.parent.name if p.parent.name in (
+                        "reports", "preds", "configs", "splits", "submissions") else "files"
+                    mlflow.log_artifact(str(p), artifact_path=sub)
+                print(f"mlflow: выложено файлов {len(keep)}", flush=True)
+                for p, why in drop:
+                    print(f"mlflow: не выложен {p.name} — {why}", flush=True)
     except Exception as e:  # трекинг не должен ронять прогон
         warnings.warn(f"mlflow: запись не удалась: {e}")

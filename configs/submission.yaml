@@ -1,14 +1,25 @@
-# Какое решение отправляем. Файл подменяется сборщиком архива под каждую попытку —
-# проверяющая система запускает ровно `python -u run.py` и своих аргументов не передаёт.
-#
-# model           путь к .joblib | rules | const:0 | const:1 | const:supplement
-# fallback_model  чем заменить основную модель, если распознавание не состоялось
-# use_ocr         распознавать ли текст на фото во время прогона
-# ocr_budget_sec  сколько секунд на это отводится; при перерасходе — откат
-
 submission:
   model: artifacts/models/tfidf_logreg.joblib
-  variant: tfidf_binary
-  comment: "текстовый бейзлайн, порог под двоичную F1"
-  use_ocr: false
-  ocr_budget_sec: 1500
+  variant: duo_best_halves
+  comment: "Каждую категорию выносит то дообучение, которое её выигрывает, и по тому же правилу отбора, по которому оно её выиграло. В «Легковоспламеняющихся» работает модель рекорда с её собственным порогом на калиброванной шкале, в «БАД» — модель сокомандника с его долей. Распознавание текста и линейная модель убраны: в редкой категории их вклад был нулевым, а в «БАД» они уступали."
+  vlm_adapters:
+    "БАД": artifacts/sft_vlm/vl4_plain_bf16
+    "Легковоспламеняющиеся": artifacts/sft_vlm/vlm_rare2_a
+  vlm_base: artifacts/models/qwen3vl4b_int8
+  vlm_batch: 32
+  vlm_weight: 1.0
+  vlm_select:
+    "БАД": rate
+    "Легковоспламеняющиеся": calibrated
+  vlm_rate:
+    "БАД": 0.5733
+  vlm_calibration:
+    "Легковоспламеняющиеся": artifacts/models/rare2_calibration.json
+  vlm_blend: replace
+  vlm_categories:
+    - "Легковоспламеняющиеся"
+    - "БАД"
+  explain: vlm
+  explain_tokens: 60
+  explain_images: 1
+  explain_desc: 300

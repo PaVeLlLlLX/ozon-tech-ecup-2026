@@ -1,0 +1,39 @@
+{
+  "vlm": {
+    "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+    "prompt_file": "configs/prompts/verdict_ru.txt",
+    "rules_files": {
+      "БАД": "configs/prompts/rules_supplement_ru.txt",
+      "Легковоспламеняющиеся": "configs/prompts/rules_flammable_ru.txt"
+    },
+    "max_images": 3,
+    "image_max_side": 640,
+    "max_pixels": 100352,
+    "desc_max_chars": 900,
+    "use_ocr": false,
+    "load_in_4bit": true,
+    "gradient_checkpointing": true,
+    "batch_size": 4,
+    "grad_accum": 4,
+    "epochs": 1,
+    "lr": 0.0001,
+    "warmup_steps": 10,
+    "logging_steps": 25,
+    "save_strategy": "no",
+    "num_workers": 2,
+    "seed": 42,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "lora_target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ],
+    "max_samples": 6000,
+    "neg_per_pos_rare": 6,
+    "balance_supplement": 1.0,
+    "eval_batch_size": 4
+  }
+}

@@ -34,6 +34,6 @@ metric:
   average: binary
 
 mlflow:
-  enabled: true
+  enabled: false
   tracking_uri: sqlite:///mlflow.db
   experiment: ecup2026-quality   # новый эксперимент под боевые решения 2026
