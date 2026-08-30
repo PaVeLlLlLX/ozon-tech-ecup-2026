@@ -140,9 +140,9 @@ def _load_image(path, step: int, max_pixels: int | None = None,
     mp = int(max_pixels or MAX_PIXELS)
     img = Image.open(path).convert("RGB")
     if max_side:
-        # ⚠ Ровно подготовка рекорда: только ужать длинную сторону и отдать
+        # ⚠ Ровно подготовка редкой половины: только ужать длинную сторону и отдать
         # процессору, а он сам приведёт кадр к сетке под бюджет пикселей. Никакого
-        # второго ужимания здесь быть не должно — в рекорде его не было.
+        # второго ужимания здесь быть не должно — в редкой половине его не было.
         w, h = img.size
         if max(w, h) > max_side:
             scale = max_side / max(w, h)
@@ -560,10 +560,10 @@ def auto_batch(device, n_images: int, asked: int | None = None,
                max_pixels: int | None = None) -> int:
     """Батч прогона ПО ФАКТИЧЕСКОЙ видеопамяти, а не числом из конфига.
 
-    ⚠ Это грабля сокомандника, стоившая ему замера: батч, подобранный под свою
+    ⚠ Это грабля второй половины, стоившая ему замера: батч, подобранный под свою
     карту на 8-24 ГБ, оставляет H100 проверяющей системы (80 ГБ) полупустой,
-    и «ускорение» выходит 1.3x вместо разов. У него в конфиге стоит батч 32
-    именно с пометкой «под H100 80 ГБ», и локально он ужимается сам.
+    и «ускорение» выходит 1.3x вместо разов. Поэтому в конфиге стоит батч 32
+    с пометкой «под H100 80 ГБ», а локально он ужимается сам.
 
     Считаем от того, что реально свободно после загрузки весов. Модель 4B в bf16
     занимает около 8.3 ГБ, ей нужен запас на активации: при пяти кадрах и длине
@@ -602,6 +602,41 @@ def auto_batch(device, n_images: int, asked: int | None = None,
           f"разрешение x{px_scale:.2g}, потолок из конфига {hard_cap})",
           flush=True)
     return batch
+
+
+_MODELS: dict = {}
+
+
+def load_with_adapter(src, adapter, dtype, device):
+    """Модель с уже вживлённым адаптером. Одна на пару (веса, адаптер).
+
+    ⚠ Кэш нужен по времени, а не по памяти. Каждый адаптер запрашивается дважды —
+    для вердикта и для объяснения, — и без кэша это четыре распаковки int8 подряд.
+    На стадии проверки лимит три минуты, и четыре в него не помещаются: отправка
+    снималась по времени ещё до публичной стадии.
+    """
+    from transformers import AutoModelForImageTextToText
+
+    key = (str(src), str(adapter), str(dtype), str(device))
+    hit = _MODELS.get(key)
+    if hit is not None:
+        print(f"адаптер {Path(adapter).name}: модель уже собрана — переиспользую, "
+              f"распаковка не повторяется", flush=True)
+        return hit
+    if (Path(src) / "packing.json").exists():
+        print("веса упакованы в int8 — разворачиваю", flush=True)
+        model = _load_from_packed(src, dtype, device)
+    else:
+        model = AutoModelForImageTextToText.from_pretrained(
+            src, dtype=dtype, local_files_only=True,
+            attn_implementation="sdpa").to(device)
+    print(f"отпечаток адаптера: {adapter_fingerprint(adapter)}", flush=True)
+    n = apply_lora(model, adapter)
+    print(f"LoRA вживлена в {n} слоёв (без peft)", flush=True)
+    model.eval()
+    model.config.use_cache = False
+    _MODELS[key] = model
+    return model
 
 
 def score_frame(df: pd.DataFrame, cfg: dict, images_root, adapter_path,
@@ -649,24 +684,11 @@ def score_frame(df: pd.DataFrame, cfg: dict, images_root, adapter_path,
         else:
             device, dtype = "cpu", torch.float32
         proc = AutoProcessor.from_pretrained(src, local_files_only=True)
-        # ⚠ Упакованные веса грузятся иначе: from_pretrained не знает про наш
-        # формат int8 с масштабом на строку и молча оставил бы слои неинициали-
-        # зированными. Признак упаковки — файл packing.json рядом с весами.
-        if (Path(src) / "packing.json").exists():
-            from qc26.models.packing import load_packed
-
-            print("веса упакованы в int8 — разворачиваю", flush=True)
-            model = _load_from_packed(src, dtype, device)
-        else:
-            model = AutoModelForImageTextToText.from_pretrained(
-                src, dtype=dtype, local_files_only=True,
-                attn_implementation="sdpa").to(device)
-
-        print(f"отпечаток адаптера: {adapter_fingerprint(adapter)}", flush=True)
-        n_layers = apply_lora(model, adapter)
-        print(f"LoRA вживлена в {n_layers} слоёв (без peft)", flush=True)
-        model.eval()
-        model.config.use_cache = False
+        # ⚠ Упакованные веса грузятся иначе: from_pretrained не знает про наш формат
+        # int8 с масштабом на строку. Сборка и вживка адаптера вынесены в
+        # load_with_adapter — она же держит кэш, чтобы проход объяснений не
+        # распаковывал те же веса заново.
+        model = load_with_adapter(src, adapter, dtype, device)
 
         tok = proc.tokenizer
         if tok.pad_token_id is None:
@@ -691,7 +713,7 @@ def score_frame(df: pd.DataFrame, cfg: dict, images_root, adapter_path,
         desc_train = desc_used_in_training(adapter)
         side_train = side_used_in_training(adapter)
         if side_train:
-            print(f"подготовка кадра как в рекорде: длинная сторона до "
+            print(f"подготовка кадра как в редкой половине: длинная сторона до "
                   f"{side_train}, дальше процессор", flush=True)
         with_facts = facts_used_in_training(adapter)
         # ⚠ Разрешение — тоже из журнала обучения, а не из константы модуля.

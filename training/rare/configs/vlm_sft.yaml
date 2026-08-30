@@ -1,0 +1,60 @@
+# LoRA SFT над VLM: модель отвечает «Да»/«Нет» на вопрос о принадлежности категории.
+# Обучение — QLoRA в 4 битах на RTX 3060 Ti 8 ГБ; инференс в контейнере — bf16 на H100.
+
+vlm:
+  # Из списка организаторов (лежит в /shared_models, бюджет архива не тратит).
+  model_id: Qwen/Qwen3-VL-2B-Instruct
+  prompt_file: configs/prompts/verdict_ru.txt
+  rules_files:
+    "БАД": configs/prompts/rules_supplement_ru.txt
+    "Легковоспламеняющиеся": configs/prompts/rules_flammable_ru.txt
+
+  # Вход
+  max_images: 3           # 1-5 фото на товар; больше кадров — больше токенов и времени
+  image_max_side: 640     # ужимаем перед процессором, чтобы не держать в памяти оригиналы
+  max_pixels: 100352      # 128 патчей на кадр → ~32 визуальных токена после склейки 2x2
+  desc_max_chars: 900
+  use_ocr: false
+
+  # Обучение
+  load_in_4bit: true
+  gradient_checkpointing: true
+  # замерено на 3060 Ti: батч 4 даёт ~0.70 примера/с против 0.44 при батче 1
+  batch_size: 4
+  grad_accum: 4
+  epochs: 1
+  lr: 1.0e-4
+  warmup_steps: 10
+  logging_steps: 25
+  save_strategy: "no"
+  num_workers: 2
+  seed: 42
+
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+  # Выборка для обучения
+  max_samples: 6000
+  neg_per_pos_rare: 6     # баланс в почти вырожденной категории (позитивов всего 198)
+  balance_supplement: 1.0 # доля негативов к позитивам в БАД (1.0 = как есть)
+
+  # Инференс
+  eval_batch_size: 4
+  # ⚠ Батч ПРОГОНА — под H100 80 ГБ проверяющей системы; локально ужимается сам.
+  inference_batch_size: 32
+  # Анкета идёт БЕЗ картинок, чистым текстом — там батч может быть кратно больше.
+  # Замер на платформе при 32: 0.061 с/вопрос-товар, восемь вопросов не укладывались.
+  qa_batch_size: 256
+  loader_workers: 8      # потоков на чтение и масштабирование кадров
+
+  # Чтение надписей с упаковки базовой моделью (без LoRA): единственный способ
+  # прочитать упаковку в контейнере, не собирая свой образ — в базовом нет easyocr.
+  # Замер на RTX 3060 Ti в этих настройках: 0.59 с/товар, то есть 37 минут на
+  # приватные 3800 при лимите 40; на H100 будет запас.
+  transcribe_max_images: 2
+  transcribe_image_max_side: 768
+  transcribe_max_pixels: 200704
+  transcribe_max_new_tokens: 64
+  transcribe_batch_size: 8

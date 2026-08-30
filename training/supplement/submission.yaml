@@ -1,0 +1,6 @@
+submission:
+  model: artifacts/models/tfidf_logreg.joblib
+  variant: tfidf_emb_blend
+  comment: текстовый бейзлайн, порог под двоичную F1
+  emb_head: artifacts/models/emb_head.pt
+  embed_batch: 32

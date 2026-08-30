@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Рабочие заметки команды — передаются напрямую, не через git
+*.local.md
+
+# Веса моделей: едут в архиве решения, в репозиторий не входят
+artifacts/models/*/
+artifacts/models/*.joblib
+artifacts/sft_vlm/*/*.safetensors
+artifacts/sft_vlm/*/tokenizer*
+artifacts/sft_vlm/*/*.jinja
+submissions/

@@ -1,0 +1,39 @@
+# Данные, сплиты и трекинг — общая часть для всех запусков.
+# Все относительные пути считаются от корня репозитория.
+
+paths:
+  data_csv: data/data.csv
+  artifacts_dir: artifacts
+  eda_dir: artifacts/eda
+  ocr_index: artifacts/ocr/ocr_index.parquet
+  groups_file: artifacts/splits/groups.parquet
+
+data:
+  id_col: id
+  target_col: label
+  category_col: category
+  name_col: name
+  desc_col: description
+  categories:
+    - "БАД"
+    - "Легковоспламеняющиеся"
+
+groups:
+  shingle_k: 8          # длина шингла (в словах) для почти-дубликатов описаний
+  use_image_hashes: true
+
+split:
+  n_folds: 5
+  holdout_frac: 0.2
+  seed: 42
+  seeds: [42, 43, 44]   # протокол: любую конфигурацию мерим на нескольких seed
+
+metric:
+  # "binary" — F1 по классу 1 внутри категории (как в baseline организаторов);
+  # "macro"  — F1 macro по обоим классам. Считаем оба, здесь — на какой оптимизируем порог.
+  average: binary
+
+mlflow:
+  enabled: true
+  tracking_uri: sqlite:///mlflow.db
+  experiment: ecup2026-quality   # новый эксперимент под боевые решения 2026

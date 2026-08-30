@@ -1,6 +1,17 @@
 """Сплошная сверка собранного архива с обоими источниками.
 
-    python audit.py
+    python tools/audit.py                        # пути по умолчанию
+    python tools/audit.py --zip <проверяемый.zip> \
+        --record <редкая половина.zip> --mate <второй_источник.zip>
+
+⚠ Для проверяющей стороны. Ключ --zip принимает ЛЮБОЙ архив: подставьте тот,
+что лежит у вас как финальная отправка, и сверка скажет, совпадает ли он с
+решением, собираемым кодом этого репозитория. Каждая строка отчёта отвечает на
+отдельный вопрос, поэтому расхождение видно точечно, а не «архивы разные».
+
+Без ключей --record и --mate сверка идёт только по внутренней связности архива:
+образ, точка входа, настройки категорий, отсутствие выброшенных зависимостей.
+Побайтовое сравнение весов требует исходных архивов.
 
 Проверяется СОБРАННЫЙ zip, а не дерево сборки: балл зависит от того, что уехало, а не
 от того, что собирались положить. Каждая строка отчёта отвечает на вопрос «сходится ли
@@ -18,9 +29,13 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ZIP = HERE.parent / "submissions" / "duo_best_halves.zip"
-REC = HERE / "vlm_blend_rare2_a_t24.zip"
-MATE = HERE.parent / "vl4_plain.zip"
+ROOT = HERE.parent
+
+# ⚠ Значения по умолчанию — раскладка нашей сборочной машины. Проверяющему они
+# почти наверняка не подойдут, поэтому все три задаются ключами.
+DEFAULT_ZIP = ROOT / "submissions" / "duo_best_halves.zip"
+DEFAULT_REC = HERE / "vlm_blend_rare2_a_t24.zip"
+DEFAULT_MATE = ROOT / "vl4_plain.zip"
 
 ok = 0
 bad = 0
@@ -47,12 +62,34 @@ def sha(data: bytes) -> str:
 
 def main() -> None:
     global ok, bad
-    for p in (ZIP, REC, MATE):
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description="сверка собранного архива с источниками, из которых он сложен")
+    ap.add_argument("--zip", default=str(DEFAULT_ZIP),
+                    help="проверяемый архив решения")
+    ap.add_argument("--record", default=str(DEFAULT_REC),
+                    help="архив-источник редкой категории")
+    ap.add_argument("--mate", default=str(DEFAULT_MATE),
+                    help="архив-источник категории БАД")
+    ap.add_argument("--no-weights", action="store_true",
+                    help="только внутренняя связность, без побайтовой сверки весов")
+    args = ap.parse_args()
+
+    ZIP, REC, MATE = Path(args.zip), Path(args.record), Path(args.mate)
+    if not ZIP.exists():
+        raise SystemExit(f"нет проверяемого архива {ZIP}")
+    # ⚠ Источники нужны только для побайтовой сверки весов. Без них остальные
+    # проверки всё равно выполняются — молча их пропускать нельзя, иначе отчёт
+    # «сошлось 20» выглядит как полная проверка, а на деле она урезана.
+    skip_weights = args.no_weights
+    for p in (REC, MATE):
         if not p.exists():
-            raise SystemExit(f"нет файла {p}")
+            print(f"⚠ нет архива-источника {p} — побайтовая сверка весов пропущена")
+            skip_weights = True
     z = zipfile.ZipFile(ZIP)
-    rec = zipfile.ZipFile(REC)
-    mate = zipfile.ZipFile(MATE)
+    rec = zipfile.ZipFile(REC) if not skip_weights else None
+    mate = zipfile.ZipFile(MATE) if not skip_weights else None
     names = set(z.namelist())
 
     print("=" * 74)
@@ -96,21 +133,24 @@ def main() -> None:
     check("адаптер", sub("vlm_adapters", "Легковоспламеняющиеся"),
           "artifacts/sft_vlm/vlm_rare2_a")
     a_ours = z.read("artifacts/sft_vlm/vlm_rare2_a/adapter_model.safetensors")
-    a_rec = rec.read("artifacts/models/vlm_rare2_a/adapter_model.safetensors")
-    check("веса адаптера (sha256)", sha(a_ours), sha(a_rec),
-          "побитово те же, что в архиве рекорда")
+    # ⚠ Без архива-источника побайтовую сверку сделать нечем. Пропускаем
+    # ЯВНО, чтобы урезанный отчёт не выглядел полным.
+    if rec is not None:
+        a_rec = rec.read("artifacts/models/vlm_rare2_a/adapter_model.safetensors")
+        check("веса адаптера (sha256)", sha(a_ours), sha(a_rec),
+              "побитово те же, что в архиве редкой половины")
     check("способ отбора", sub("vlm_select", "Легковоспламеняющиеся"), "calibrated",
           "порог по эталону, а не доля")
     cal = json.loads(z.read("artifacts/models/rare2_calibration.json"))
-    check("порог", cal["порог"], 0.9699, "из thresholds рекорда")
+    check("порог", cal["порог"], 0.9699, "из thresholds редкой половины")
     check("длина эталона", len(cal["эталон"]), 1101, "фолд 0 редкой категории")
     log = json.loads(z.read("artifacts/sft_vlm/vlm_rare2_a/train_log.json"))
     check("шаблон промпта", log["prompt"], "rare2", "сверен с verdict_ru.txt посимвольно")
-    check("обрезка описания", log["desc_max"], 900, "из vlm_sft_rented.yaml рекорда")
+    check("обрезка описания", log["desc_max"], 900, "из vlm_sft_rented.yaml редкой половины")
     check("кадров", log["n_images"], 5)
     check("пикселей на кадр", log["max_pixels"], 100352)
     check("написаний «да»", log["yes_variants"], ["Да", " Да", "да", "Yes", " Yes"],
-          "как YES_VARIANTS рекорда")
+          "как YES_VARIANTS редкой половины")
     check("написаний «нет»", log["no_variants"], ["Нет", " Нет", "нет", "No", " No"])
 
     print()
@@ -119,11 +159,14 @@ def main() -> None:
     print("=" * 74)
     check("адаптер", sub("vlm_adapters", "БАД"), "artifacts/sft_vlm/vl4_plain_bf16")
     b_ours = z.read("artifacts/sft_vlm/vl4_plain_bf16/adapter_model.safetensors")
-    b_mate = mate.read("artifacts/sft_vlm/vl4_plain_bf16/adapter_model.safetensors")
-    check("веса адаптера (sha256)", sha(b_ours), sha(b_mate),
-          "побитово те же, что в его архиве")
-    check("способ отбора", sub("vlm_select", "БАД"), "rate", "доля, как у него")
-    check("доля", sub("vlm_rate", "БАД"), "0.5733", "его число")
+    # ⚠ Без архива-источника побайтовую сверку сделать нечем. Пропускаем
+    # ЯВНО, чтобы урезанный отчёт не выглядел полным.
+    if mate is not None:
+        b_mate = mate.read("artifacts/sft_vlm/vl4_plain_bf16/adapter_model.safetensors")
+        check("веса адаптера (sha256)", sha(b_ours), sha(b_mate),
+              "побитово те же, что в его архиве")
+    check("способ отбора", sub("vlm_select", "БАД"), "rate", "доля, как во второй половине")
+    check("доля", sub("vlm_rate", "БАД"), "0.5733", "число второй половины")
     blog = json.loads(z.read("artifacts/sft_vlm/vl4_plain_bf16/train_log.json"))
     check("шаблон промпта", blog["prompt"], "qc")
     check("обрезка описания", blog.get("desc_max", "нет ключа → 800"),

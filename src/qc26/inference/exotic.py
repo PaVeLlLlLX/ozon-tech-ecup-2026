@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from .vlm import (MAX_DESC, MAX_NAME, NO, RULES, YES, _grid_step, _load_from_packed,
+                  load_with_adapter,
                   _load_image, _paths, _resolve_base, apply_lora, auto_batch,
                   base_used_in_training, facts_used_in_training, find_adapter_dir,
                   first_token_ids, images_used_in_training, pixels_used_in_training,
@@ -111,11 +112,9 @@ class _Runner:
         self.proc = AutoProcessor.from_pretrained(src, local_files_only=True)
         if not (Path(src) / "packing.json").exists():
             raise RuntimeError("ожидались упакованные веса с packing.json")
-        self.model = _load_from_packed(src, dtype, device)
-        n = apply_lora(self.model, adapter)
-        print(f"адаптер {adapter.name}: LoRA вживлена в {n} слоёв", flush=True)
-        self.model.eval()
-        self.model.config.use_cache = False
+        # ⚠ Та же сборка, что и на проходе вердикта, и тот же кэш: если этот адаптер
+        # уже оценивал товары, распаковка не повторится.
+        self.model = load_with_adapter(src, adapter, dtype, device)
 
         tok = self.proc.tokenizer
         if tok.pad_token_id is None:
