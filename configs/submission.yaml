@@ -1,0 +1,14 @@
+# Какое решение отправляем. Файл подменяется сборщиком архива под каждую попытку —
+# проверяющая система запускает ровно `python -u run.py` и своих аргументов не передаёт.
+#
+# model           путь к .joblib | rules | const:0 | const:1 | const:supplement
+# fallback_model  чем заменить основную модель, если распознавание не состоялось
+# use_ocr         распознавать ли текст на фото во время прогона
+# ocr_budget_sec  сколько секунд на это отводится; при перерасходе — откат
+
+submission:
+  model: artifacts/models/tfidf_logreg.joblib
+  variant: tfidf_binary
+  comment: "текстовый бейзлайн, порог под двоичную F1"
+  use_ocr: false
+  ocr_budget_sec: 1500
