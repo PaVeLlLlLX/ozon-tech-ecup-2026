@@ -1,0 +1,11 @@
+submission:
+  model: vlmblend:artifacts/models/vlm_blend_rare2_a_t24.joblib:artifacts/models/vlm_rare2_a
+  variant: vlm_blend_rare2_a_t24
+  comment: "Решение, давшее наш лучший результат, с единственной правкой: в категории «Легковоспламеняющиеся» порог смягчён так, чтобы вердикт «не бан» получала доля товаров около трёх с половиной процентов вместо трёх."
+  use_ocr: true
+  use_embeddings: false
+  ocr_engine: easyocr
+  on_vision_failure: fail
+  ocr_max_images: 2
+  fallback_model: artifacts/models/tfidf_logreg.joblib
+  packed_base_path: artifacts/models/qwen4b_packed
